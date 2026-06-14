@@ -26,7 +26,6 @@ fun AppNavigation(
     fun navigateToDetail(itemName: String) {
         val userItem = viewModel.getUserListedItem(itemName)
         when {
-            // Own listing — use query params so special chars / hyphens never break the route
             userItem != null && userItem.sellerName == "Me" -> {
                 val encodedName = Uri.encode(userItem.name)
                 val encodedCat  = Uri.encode(userItem.category)
@@ -56,6 +55,7 @@ fun AppNavigation(
                 onAllFoodClick      = { navController.navigate("category/Food") },
                 onAllNonFoodClick   = { navController.navigate("category/Non-food") },
                 onAllGoingSoonClick = { navController.navigate("going_soon") },
+                onAllMyListingsClick = { navController.navigate("category/My Listings") },
                 onHomeClick         = goHome,
                 onProfileClick      = { navController.navigate("profile") },
                 viewModel           = viewModel,
@@ -130,7 +130,7 @@ fun AppNavigation(
             )
         }
 
-        // ── My listing detail — query-param route (safe for any item name/category) ──
+        // ── My listing detail ─────────────────────────────────────────
         composable(
             route = "my_listing_detail?name={itemName}&cat={category}",
             arguments = listOf(
@@ -155,6 +155,37 @@ fun AppNavigation(
                     navController.navigate("home") {
                         popUpTo("home") { inclusive = false }
                     }
+                },
+                onEdit = {
+                    // Navigate to the edit screen for this listing
+                    val encodedName = Uri.encode(name)
+                    navController.navigate("edit_listing?name=$encodedName")
+                },
+                viewModel = viewModel
+            )
+        }
+
+        // ── Edit listing ──────────────────────────────────────────────
+        composable(
+            route = "edit_listing?name={itemName}",
+            arguments = listOf(
+                navArgument("itemName") {
+                    type = NavType.StringType
+                    defaultValue = ""
+                }
+            )
+        ) { back ->
+            val name = Uri.decode(back.arguments?.getString("itemName") ?: "")
+            EditListingScreen(
+                itemName = name,
+                onBack   = { navController.popBackStack() },
+                onSaved  = { newName, cat ->
+                    // Pop edit screen + detail screen, then open the updated detail
+                    navController.popBackStack()
+                    navController.popBackStack()
+                    val encodedName = Uri.encode(newName)
+                    val encodedCat  = Uri.encode(cat)
+                    navController.navigate("my_listing_detail?name=$encodedName&cat=$encodedCat")
                 },
                 viewModel = viewModel
             )

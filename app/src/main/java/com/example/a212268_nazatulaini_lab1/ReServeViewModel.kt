@@ -91,7 +91,16 @@ class ReServeViewModel(
         userListedItems.value.firstOrNull { it.name == name }?.photoUri
 
     fun getDistance(name: String): String {
-        userListedItems.value.firstOrNull { it.name == name }?.let { return it.location }
+        userListedItems.value.firstOrNull { it.name == name }?.let { item ->
+            val parts = item.location.split(",").map { it.trim().toDoubleOrNull() }
+            return if (parts.size == 2 && parts[0] != null && parts[1] != null) {
+                com.example.a212268_nazatulaini_lab1.DistanceUtils.formatDistance(
+                    parts[0]!!, parts[1]!!, 3.1234, 101.5678
+                )
+            } else {
+                item.location
+            }
+        }
         return when (name) {
             "Apple" -> "1.2km"; "Bread" -> "0.8km"; "Milk" -> "2.1km"
             "Cake" -> "3.5km"; "Banana" -> "0.5km"; "Pizza" -> "1.9km"

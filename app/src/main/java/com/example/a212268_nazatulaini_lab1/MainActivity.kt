@@ -87,6 +87,7 @@ fun ReServeApp(
     onAllFoodClick     : () -> Unit = {},
     onAllNonFoodClick  : () -> Unit = {},
     onAllGoingSoonClick: () -> Unit = {},
+    onAllMyListingsClick: () -> Unit = {},
     onHomeClick        : () -> Unit = {},
     onProfileClick     : () -> Unit = {},
     initialFilter      : String = "All",
@@ -255,7 +256,8 @@ fun ReServeApp(
                                             allFood.contains(itemName) -> onFoodItemClick(itemName)
                                             else -> onNonFoodItemClick(itemName)
                                         }
-                                    }
+                                    },
+                                    onAllClick = onAllMyListingsClick
                                 )
                             }
                         } else {
@@ -263,6 +265,7 @@ fun ReServeApp(
                                 "Food"       -> allFood
                                 "Non-food"   -> allNonFood
                                 "Going Soon" -> goingSoon
+                                "My Listings" -> userListedItems.map { it.name }
                                 else         -> allFood
                             }
                             Text(
@@ -273,28 +276,38 @@ fun ReServeApp(
                             )
                             Spacer(modifier = Modifier.height(16.dp))
                             itemsToShow.forEach { item ->
-                                FullWidthItemCard(
-                                    name           = item,
-                                    imageRes       = getItemImage(item),
-                                    isSoldOut      = isSoldOut(item),
-                                    isBorrowed     = isBorrowed(item),
-                                    photoUriString = viewModel.getPhotoUri(item),
-                                    onItemClick    = {
-                                        when (selectedFilter) {
-                                            "Food"     -> onFoodItemClick(item)
-                                            "Non-food" -> onNonFoodItemClick(item)
-                                            else -> {
-                                                val userItem = userListedItems.firstOrNull { it.name == item }
-                                                when {
-                                                    userItem?.category?.equals("Food", ignoreCase = true) == true -> onFoodItemClick(item)
-                                                    userItem != null -> onNonFoodItemClick(item)
-                                                    allFood.contains(item) -> onFoodItemClick(item)
-                                                    else -> onFoodItemClick(item)
+                                itemsToShow.forEach { item ->
+                                    FullWidthItemCard(
+                                        name           = item,
+                                        imageRes       = getItemImage(item),
+                                        isSoldOut      = isSoldOut(item),
+                                        isBorrowed     = isBorrowed(item),
+                                        photoUriString = viewModel.getPhotoUri(item),
+                                        onItemClick    = {
+                                            when (selectedFilter) {
+                                                "Food"     -> onFoodItemClick(item)
+                                                "Non-food" -> onNonFoodItemClick(item)
+                                                "My Listings" -> {
+                                                    val userItem = userListedItems.firstOrNull { it.name == item }
+                                                    if (userItem?.category?.equals("Food", ignoreCase = true) == true)
+                                                        onFoodItemClick(item)
+                                                    else
+                                                        onNonFoodItemClick(item)
+                                                }
+                                                else -> {
+                                                    val userItem = userListedItems.firstOrNull { it.name == item }
+                                                    when {
+                                                        userItem?.category?.equals("Food", ignoreCase = true) == true -> onFoodItemClick(item)
+                                                        userItem != null -> onNonFoodItemClick(item)
+                                                        allFood.contains(item) -> onFoodItemClick(item)
+                                                        else -> onFoodItemClick(item)
+                                                    }
                                                 }
                                             }
                                         }
-                                    }
-                                )
+                                    )
+                                    Spacer(modifier = Modifier.height(16.dp))
+                                }
                                 Spacer(modifier = Modifier.height(16.dp))
                             }
                         }
@@ -705,7 +718,7 @@ fun getItemImage(name: String): Int = when (name) {
 @Composable
 fun FilterSection(selected: String, onSelect: (String) -> Unit) {
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        listOf("All", "Food", "Non-food", "Going Soon").forEach { tag ->
+        listOf("All", "Food", "Non-food", "Going Soon", "My Listings").forEach { tag ->
             FilterChip(
                 selected = selected == tag,
                 onClick  = { onSelect(tag) },

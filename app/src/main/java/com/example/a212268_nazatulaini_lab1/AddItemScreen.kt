@@ -490,7 +490,10 @@ fun GpsLocationButton(
                 val loc = locationHelper.getCurrentLocation()
                 isFetching = false
                 if (loc != null) {
-                    onLocationFetched("%.5f, %.5f".format(loc.latitude, loc.longitude))
+                    val distance = locationHelper.formatDistance(
+                        loc.latitude, loc.longitude, 3.1234, 101.5678
+                    )
+                    onLocationFetched(distance)
                     error = null
                 } else {
                     error = "Could not get location. Make sure GPS is on."
@@ -512,7 +515,10 @@ fun GpsLocationButton(
                 val loc = locationHelper.getCurrentLocation()
                 isFetching = false
                 if (loc != null) {
-                    onLocationFetched("%.5f, %.5f".format(loc.latitude, loc.longitude))
+                    val distance = locationHelper.formatDistance(
+                        loc.latitude, loc.longitude, 3.1234, 101.5678
+                    )
+                    onLocationFetched(distance)
                     error = null
                 } else {
                     error = "Could not get location. Make sure GPS is on."

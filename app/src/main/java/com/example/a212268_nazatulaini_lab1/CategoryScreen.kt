@@ -41,6 +41,7 @@ fun CategoryScreen(
         when (filter) {
             "Food"     -> viewModel.getFoodItems().map { it.name }
             "Non-food" -> viewModel.getNonFoodItems().map { it.name }
+            "My Listings" -> userListedItems.map { it.name }
             else       -> emptyList()
         }
     }
@@ -140,8 +141,14 @@ fun CategoryScreen(
                             isBorrowed = isBorrowed(name),
                             photoUriString = viewModel.getPhotoUri(name),
                             onItemClick = {
-                                if (filter == "Non-food") onNonFoodItemClick(name)
-                                else onFoodItemClick(name)
+                                val userItem = userListedItems.firstOrNull { it.name == name }
+                                when {
+                                    filter == "Non-food" -> onNonFoodItemClick(name)
+                                    filter == "My Listings" && userItem != null ->
+                                        if (userItem.category.equals("Food", ignoreCase = true)) onFoodItemClick(name)
+                                        else onNonFoodItemClick(name)
+                                    else -> onFoodItemClick(name)
+                                }
                             }
                         )
                     }

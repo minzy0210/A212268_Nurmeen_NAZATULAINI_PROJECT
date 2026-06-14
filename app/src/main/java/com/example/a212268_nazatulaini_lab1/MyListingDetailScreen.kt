@@ -32,48 +32,6 @@ import coil.compose.rememberAsyncImagePainter
 private enum class MyListingDialog { NONE, DELETE, SOLD }
 private enum class MyListingOverlay { NONE, RESERVE_CONFIRM, RESERVED, BORROW_CONFIRM, BORROWED }
 
-// ── Safe image composable — handles blank.xml (shape drawable) gracefully ──
-@Composable
-private fun SafeItemImage(
-    itemName: String,
-    photoUri: String?,
-    modifier: Modifier = Modifier,
-    contentScale: ContentScale = ContentScale.Crop
-) {
-    val imageRes = getItemImage(itemName)
-    when {
-        photoUri != null -> Image(
-            painter = rememberAsyncImagePainter(
-                model = photoUri,
-                error = if (imageRes != R.drawable.blank)
-                    painterResource(imageRes) else null,
-                fallback = if (imageRes != R.drawable.blank)
-                    painterResource(imageRes) else null
-            ),
-            contentDescription = itemName,
-            modifier = modifier,
-            contentScale = contentScale
-        )
-        imageRes != R.drawable.blank -> Image(
-            painter = painterResource(imageRes),
-            contentDescription = itemName,
-            modifier = modifier,
-            contentScale = contentScale
-        )
-        else -> Box(
-            modifier = modifier.background(MaterialTheme.colorScheme.surfaceVariant),
-            contentAlignment = Alignment.Center
-        ) {
-            Icon(
-                Icons.Default.Image,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
-                modifier = Modifier.size(48.dp)
-            )
-        }
-    }
-}
-
 @Composable
 fun MyListingDetailScreen(
     itemName: String,
@@ -81,6 +39,7 @@ fun MyListingDetailScreen(
     onBack: () -> Unit,
     onHomeClick: () -> Unit = {},
     onDeleted: () -> Unit = {},
+    onEdit: () -> Unit = {},          // ← NEW: navigates to EditListingScreen
     viewModel: ReServeViewModel
 ) {
     val userListedItems    by viewModel.userListedItems.collectAsStateWithLifecycle()
@@ -145,7 +104,6 @@ fun MyListingDetailScreen(
 
     Box(modifier = Modifier.fillMaxSize()) {
 
-        // ── Background ────────────────────────────────────────────────
         Image(
             painter = painterResource(R.drawable.wallpaper),
             contentDescription = null,
@@ -175,12 +133,21 @@ fun MyListingDetailScreen(
                 // ── Hero Image ────────────────────────────────────────
                 Box(modifier = Modifier.fillMaxWidth().height(300.dp)) {
 
-                    // Use SafeItemImage to avoid blank.xml crash
-                    SafeItemImage(
-                        itemName = itemName,
-                        photoUri = userItem.photoUri,
-                        modifier = Modifier.fillMaxSize()
-                    )
+                    if (userItem.photoUri != null) {
+                        Image(
+                            painter = rememberAsyncImagePainter(userItem.photoUri),
+                            contentDescription = itemName,
+                            modifier = Modifier.fillMaxSize(),
+                            contentScale = ContentScale.Crop
+                        )
+                    } else {
+                        Image(
+                            painter = painterResource(getItemImage(itemName)),
+                            contentDescription = itemName,
+                            modifier = Modifier.fillMaxSize(),
+                            contentScale = ContentScale.Crop
+                        )
+                    }
 
                     Box(
                         modifier = Modifier
@@ -212,22 +179,33 @@ fun MyListingDetailScreen(
                             Icon(Icons.AutoMirrored.Filled.ArrowBack, null, tint = MaterialTheme.colorScheme.onSurface)
                         }
 
-                        Surface(
-                            color = MaterialTheme.colorScheme.primary,
-                            shape = RoundedCornerShape(12.dp)
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                                verticalAlignment = Alignment.CenterVertically
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            // ── NEW: Quick edit button in hero ────────
+                            IconButton(
+                                onClick = onEdit,
+                                modifier = Modifier
+                                    .clip(CircleShape)
+                                    .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.85f))
                             ) {
-                                Icon(Icons.Default.Person, null, tint = Color.White, modifier = Modifier.size(14.dp))
-                                Spacer(Modifier.width(4.dp))
-                                Text("MY LISTING", color = Color.White, fontWeight = FontWeight.ExtraBold, fontSize = 12.sp)
+                                Icon(Icons.Default.Edit, contentDescription = "Edit listing", tint = MaterialTheme.colorScheme.primary)
+                            }
+
+                            Surface(
+                                color = MaterialTheme.colorScheme.primary,
+                                shape = RoundedCornerShape(12.dp)
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(Icons.Default.Person, null, tint = Color.White, modifier = Modifier.size(14.dp))
+                                    Spacer(Modifier.width(4.dp))
+                                    Text("MY LISTING", color = Color.White, fontWeight = FontWeight.ExtraBold, fontSize = 12.sp)
+                                }
                             }
                         }
                     }
 
-                    // ── Discount badge (Food only) ──
                     if (isFood && item.discountPercent > 0) {
                         Surface(
                             modifier = Modifier
@@ -268,7 +246,7 @@ fun MyListingDetailScreen(
                             )
                         )
                     }
-                } // end Hero Box
+                }
 
                 // ── Info Card ──────────────────────────────────────────
                 Surface(
@@ -285,7 +263,7 @@ fun MyListingDetailScreen(
                             .verticalScroll(rememberScrollState())
                     ) {
 
-                        // ── Active / Sold status banner ───────────────
+                        // Active / Sold status banner
                         Surface(
                             modifier = Modifier.fillMaxWidth(),
                             shape = RoundedCornerShape(14.dp),
@@ -313,7 +291,7 @@ fun MyListingDetailScreen(
 
                         Spacer(Modifier.height(20.dp))
 
-                        // ── Price / Deposit row ────────────────────────
+                        // Price / Deposit row
                         if (isFood) {
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
@@ -387,7 +365,7 @@ fun MyListingDetailScreen(
                         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                         Spacer(Modifier.height(20.dp))
 
-                        // ── Listing details grid ──────────────────────
+                        // Listing details grid
                         Text("Listing Details", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
                         Spacer(Modifier.height(12.dp))
                         Surface(
@@ -410,7 +388,6 @@ fun MyListingDetailScreen(
 
                         Spacer(Modifier.height(20.dp))
 
-                        // ── Description ───────────────────────────────
                         Text("Description", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
                         Spacer(Modifier.height(8.dp))
                         Text(
@@ -424,7 +401,7 @@ fun MyListingDetailScreen(
                         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                         Spacer(Modifier.height(20.dp))
 
-                        // ── Performance stats ─────────────────────────
+                        // Performance stats
                         Text("Listing Performance", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
                         Spacer(Modifier.height(12.dp))
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -445,7 +422,6 @@ fun MyListingDetailScreen(
                         Spacer(Modifier.height(20.dp))
 
                         if (isFood) {
-                            // ── Quantity picker ──
                             Text("Select Quantity", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
                             Spacer(Modifier.height(16.dp))
                             Row(
@@ -492,7 +468,6 @@ fun MyListingDetailScreen(
                                 )
                             }
                         } else {
-                            // ── Non-food: Borrow button ──
                             Button(
                                 onClick = {
                                     if (!isBorrowed) overlay = MyListingOverlay.BORROW_CONFIRM
@@ -522,9 +497,25 @@ fun MyListingDetailScreen(
                         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                         Spacer(Modifier.height(20.dp))
 
-                        // ── Manage actions ────────────────────────────
+                        // ── Manage Listing section ────────────────────
                         Text("Manage Listing", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
                         Spacer(Modifier.height(12.dp))
+
+                        // ── NEW: Edit button ──────────────────────────
+                        Button(
+                            onClick  = onEdit,
+                            modifier = Modifier.fillMaxWidth().height(52.dp),
+                            shape    = RoundedCornerShape(14.dp),
+                            colors   = ButtonDefaults.buttonColors(
+                                containerColor = MaterialTheme.colorScheme.primary
+                            )
+                        ) {
+                            Icon(Icons.Default.Edit, null)
+                            Spacer(Modifier.width(8.dp))
+                            Text("Edit Listing", fontWeight = FontWeight.Bold)
+                        }
+
+                        Spacer(Modifier.height(10.dp))
 
                         Button(
                             onClick  = { showDialog = MyListingDialog.SOLD },
@@ -562,9 +553,9 @@ fun MyListingDetailScreen(
                     }
                 }
             }
-        } // end Scaffold
+        }
 
-        // ── Reserve Confirm overlay (Food) ──
+        // ── Reserve Confirm overlay ────────────────────────────────────
         AnimatedVisibility(
             visible = overlay == MyListingOverlay.RESERVE_CONFIRM,
             enter = fadeIn(tween(250)) + slideInVertically(initialOffsetY = { it }, animationSpec = tween(380, easing = FastOutSlowInEasing)),
@@ -578,17 +569,12 @@ fun MyListingDetailScreen(
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.Center
                 ) {
-                    // ── FIXED: use SafeItemImage instead of painterResource(getItemImage()) ──
-                    Surface(
-                        modifier = Modifier.size(110.dp),
-                        shape = RoundedCornerShape(24.dp),
-                        color = MaterialTheme.colorScheme.surfaceVariant
-                    ) {
-                        SafeItemImage(
-                            itemName = itemName,
-                            photoUri = item.photoUri,
-                            modifier = Modifier.fillMaxSize()
-                        )
+                    Surface(modifier = Modifier.size(110.dp), shape = RoundedCornerShape(24.dp), color = Color.Transparent) {
+                        if (item.photoUri != null) {
+                            Image(rememberAsyncImagePainter(item.photoUri), null, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+                        } else {
+                            Image(painterResource(getItemImage(itemName)), null, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+                        }
                     }
                     Spacer(Modifier.height(28.dp))
                     Text("Confirm Reservation", style = MaterialTheme.typography.headlineMedium.copy(color = Color.White, fontWeight = FontWeight.ExtraBold), textAlign = TextAlign.Center)
@@ -683,7 +669,7 @@ fun MyListingDetailScreen(
             }
         }
 
-        // ── Borrow Confirm overlay (Non-Food) ──
+        // ── Borrow Confirm overlay ─────────────────────────────────────
         AnimatedVisibility(
             visible = overlay == MyListingOverlay.BORROW_CONFIRM,
             enter = fadeIn(tween(250)) + slideInVertically(initialOffsetY = { it }, animationSpec = tween(380, easing = FastOutSlowInEasing)),
@@ -697,17 +683,12 @@ fun MyListingDetailScreen(
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.Center
                 ) {
-                    // ── FIXED: use SafeItemImage instead of painterResource(getItemImage()) ──
-                    Surface(
-                        modifier = Modifier.size(110.dp),
-                        shape = RoundedCornerShape(24.dp),
-                        color = MaterialTheme.colorScheme.surfaceVariant
-                    ) {
-                        SafeItemImage(
-                            itemName = itemName,
-                            photoUri = item.photoUri,
-                            modifier = Modifier.fillMaxSize()
-                        )
+                    Surface(modifier = Modifier.size(110.dp), shape = RoundedCornerShape(24.dp), color = Color.Transparent) {
+                        if (item.photoUri != null) {
+                            Image(rememberAsyncImagePainter(item.photoUri), null, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+                        } else {
+                            Image(painterResource(getItemImage(itemName)), null, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+                        }
                     }
                     Spacer(Modifier.height(28.dp))
                     Text("Confirm Borrow Request", style = MaterialTheme.typography.headlineMedium.copy(color = Color.White, fontWeight = FontWeight.ExtraBold), textAlign = TextAlign.Center)
@@ -803,7 +784,6 @@ fun MyListingDetailScreen(
             )
         }
 
-        // ── Mark-as-sold confirmation dialog ──────────────────────────
         if (showDialog == MyListingDialog.SOLD) {
             ConfirmDialog(
                 iconRes      = Icons.Default.CheckCircle,
@@ -876,8 +856,6 @@ private fun ConfirmDialog(
         }
     }
 }
-
-// ── Small row / card helpers ───────────────────────────────────────────────
 
 @Composable
 private fun DetailRow(icon: ImageVector, label: String, value: String) {

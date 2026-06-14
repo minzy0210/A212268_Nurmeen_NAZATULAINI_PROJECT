@@ -34,8 +34,8 @@ class ReServeRepository(
 
     // Remove from Room AND remove from Firestore
     suspend fun deleteUserItem(item: UserListedItem) {
-        userListedItemDao.delete(item.toEntity())
-        firestoreRepo.deleteFromCloud(item.name)               // ← ADD
+        userListedItemDao.deleteByName(item.name)
+        firestoreRepo.deleteFromCloud(item.name)
     }
 
     suspend fun updateUserItem(item: UserListedItem) {
@@ -78,8 +78,7 @@ class ReServeRepository(
             ReservationEntity(itemName, (existing?.quantity ?: 0) + quantity)
         )
     }
-
-    // ── Borrowed items ────────────────────────────────────────────────
+     // ── Borrowed items ────────────────────────────────────────────────
 
     val borrowedItems: Flow<List<BorrowedItemEntity>> = borrowedItemDao.getAll()
 
@@ -93,6 +92,7 @@ class ReServeRepository(
 
     suspend fun saveProfile(profile: UserProfileEntity) =
         userProfileDao.upsert(profile)
+
 
     // ── Community listings from Firestore (Requirement 2) ─────────────
 

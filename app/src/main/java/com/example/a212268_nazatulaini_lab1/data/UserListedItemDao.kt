@@ -20,9 +20,8 @@ interface UserListedItemDao {
     suspend fun getByName(name: String): UserListedItemEntity?
 
     // Remove a listing
-    @Delete
-    suspend fun delete(item: UserListedItemEntity)
-
+    @Query("DELETE FROM user_listed_items WHERE name = :name")
+    suspend fun deleteByName(name: String)
     // Update an existing listing (e.g. edit stock/condition)
     @Update
     suspend fun update(item: UserListedItemEntity)
