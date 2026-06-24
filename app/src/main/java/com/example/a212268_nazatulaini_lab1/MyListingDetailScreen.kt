@@ -20,6 +20,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -28,9 +29,37 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.rememberAsyncImagePainter
+import kotlinx.coroutines.launch
 
 private enum class MyListingDialog { NONE, DELETE, SOLD }
 private enum class MyListingOverlay { NONE, RESERVE_CONFIRM, RESERVED, BORROW_CONFIRM, BORROWED }
+
+// ── Helper: detect coordinate string and reverse-geocode it ───────────────
+
+@Composable
+private fun rememberDisplayLocation(rawLocation: String): String {
+    val context = LocalContext.current
+    var displayLocation by remember(rawLocation) { mutableStateOf(rawLocation) }
+    val scope = rememberCoroutineScope()
+
+    LaunchedEffect(rawLocation) {
+        // Matches patterns like "3.01580, 101.78800" or "3.1234,101.5678"
+        val coordRegex = Regex("""^-?\d+(\.\d+)?\s*,\s*-?\d+(\.\d+)?$""")
+        if (coordRegex.matches(rawLocation.trim())) {
+            scope.launch {
+                val parts = rawLocation.split(",").map { it.trim().toDoubleOrNull() }
+                if (parts.size == 2 && parts[0] != null && parts[1] != null) {
+                    val helper = LocationHelper(context)
+                    val name = helper.getPlaceName(parts[0]!!, parts[1]!!)
+                    if (name.isNotBlank()) displayLocation = name
+                }
+            }
+        }
+        // If it's not coordinates (e.g. "1.2km, Taman Mulia"), show as-is
+    }
+
+    return displayLocation
+}
 
 @Composable
 fun MyListingDetailScreen(
@@ -39,8 +68,8 @@ fun MyListingDetailScreen(
     onBack: () -> Unit,
     onHomeClick: () -> Unit = {},
     onDeleted: () -> Unit = {},
-    onEdit: () -> Unit = {},          // ← NEW: navigates to EditListingScreen
-    viewModel: ReServeViewModel
+    viewModel: ReServeViewModel,
+    onEdit: () -> Unit
 ) {
     val userListedItems    by viewModel.userListedItems.collectAsStateWithLifecycle()
     val reservedQuantities by viewModel.reservedQuantities.collectAsStateWithLifecycle()
@@ -102,6 +131,9 @@ fun MyListingDetailScreen(
 
     if (quantity > remainingStock && remainingStock > 0) quantity = remainingStock
 
+    // ── Resolve location: coordinates → place name, or show as-is ────
+    val displayLocation = rememberDisplayLocation(item.location)
+
     Box(modifier = Modifier.fillMaxSize()) {
 
         Image(
@@ -134,8 +166,13 @@ fun MyListingDetailScreen(
                 Box(modifier = Modifier.fillMaxWidth().height(300.dp)) {
 
                     if (userItem.photoUri != null) {
+                        val painter = rememberAsyncImagePainter(
+                            model = userItem.photoUri,
+                            error = painterResource(getItemImage(itemName)),
+                            fallback = painterResource(getItemImage(itemName))
+                        )
                         Image(
-                            painter = rememberAsyncImagePainter(userItem.photoUri),
+                            painter = painter,
                             contentDescription = itemName,
                             modifier = Modifier.fillMaxSize(),
                             contentScale = ContentScale.Crop
@@ -179,29 +216,17 @@ fun MyListingDetailScreen(
                             Icon(Icons.AutoMirrored.Filled.ArrowBack, null, tint = MaterialTheme.colorScheme.onSurface)
                         }
 
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            // ── NEW: Quick edit button in hero ────────
-                            IconButton(
-                                onClick = onEdit,
-                                modifier = Modifier
-                                    .clip(CircleShape)
-                                    .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.85f))
+                        Surface(
+                            color = MaterialTheme.colorScheme.primary,
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                                verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Icon(Icons.Default.Edit, contentDescription = "Edit listing", tint = MaterialTheme.colorScheme.primary)
-                            }
-
-                            Surface(
-                                color = MaterialTheme.colorScheme.primary,
-                                shape = RoundedCornerShape(12.dp)
-                            ) {
-                                Row(
-                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Icon(Icons.Default.Person, null, tint = Color.White, modifier = Modifier.size(14.dp))
-                                    Spacer(Modifier.width(4.dp))
-                                    Text("MY LISTING", color = Color.White, fontWeight = FontWeight.ExtraBold, fontSize = 12.sp)
-                                }
+                                Icon(Icons.Default.Person, null, tint = Color.White, modifier = Modifier.size(14.dp))
+                                Spacer(Modifier.width(4.dp))
+                                Text("MY LISTING", color = Color.White, fontWeight = FontWeight.ExtraBold, fontSize = 12.sp)
                             }
                         }
                     }
@@ -374,8 +399,9 @@ fun MyListingDetailScreen(
                             color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
                         ) {
                             Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                                DetailRow(Icons.Default.LocationOn, "Location",  item.location)
-                                DetailRow(Icons.Default.Info,       "Category",  item.category)
+                                // ── Show resolved place name, not raw coordinates ──
+                                DetailRow(Icons.Default.LocationOn, "Location", displayLocation)
+                                DetailRow(Icons.Default.Info, "Category", item.category)
                                 if (isFood) {
                                     DetailRow(Icons.Default.List,      "Quantity", "${item.quantity} units")
                                     DetailRow(Icons.Default.DateRange, "Expiry",   item.expiresIn)
@@ -401,7 +427,6 @@ fun MyListingDetailScreen(
                         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                         Spacer(Modifier.height(20.dp))
 
-                        // Performance stats
                         Text("Listing Performance", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
                         Spacer(Modifier.height(12.dp))
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -497,25 +522,8 @@ fun MyListingDetailScreen(
                         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                         Spacer(Modifier.height(20.dp))
 
-                        // ── Manage Listing section ────────────────────
                         Text("Manage Listing", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
                         Spacer(Modifier.height(12.dp))
-
-                        // ── NEW: Edit button ──────────────────────────
-                        Button(
-                            onClick  = onEdit,
-                            modifier = Modifier.fillMaxWidth().height(52.dp),
-                            shape    = RoundedCornerShape(14.dp),
-                            colors   = ButtonDefaults.buttonColors(
-                                containerColor = MaterialTheme.colorScheme.primary
-                            )
-                        ) {
-                            Icon(Icons.Default.Edit, null)
-                            Spacer(Modifier.width(8.dp))
-                            Text("Edit Listing", fontWeight = FontWeight.Bold)
-                        }
-
-                        Spacer(Modifier.height(10.dp))
 
                         Button(
                             onClick  = { showDialog = MyListingDialog.SOLD },
@@ -799,8 +807,6 @@ fun MyListingDetailScreen(
         }
     }
 }
-
-// ── Reusable modal dialog ──────────────────────────────────────────────────
 
 @Composable
 private fun ConfirmDialog(

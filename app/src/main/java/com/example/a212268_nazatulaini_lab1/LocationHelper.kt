@@ -4,84 +4,86 @@ import android.annotation.SuppressLint
 import android.content.Context
 import android.location.Geocoder
 import android.os.Build
-import com.google.android.gms.location.LocationServices
+import com.google.android.gms.location.*
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.tasks.await
 import kotlin.coroutines.resume
 import kotlin.math.*
 
 data class UserLocation(val latitude: Double, val longitude: Double)
-object DistanceUtils {
-    private const val EARTH_RADIUS_M = 6_371_000.0
 
-    fun formatDistance(lat1: Double, lon1: Double, lat2: Double, lon2: Double): String {
-        val dLat = Math.toRadians(lat2 - lat1)
-        val dLon = Math.toRadians(lon2 - lon1)
-        val a = sin(dLat / 2).pow(2) +
-                cos(Math.toRadians(lat1)) * cos(Math.toRadians(lat2)) *
-                sin(dLon / 2).pow(2)
-        val c = 2 * atan2(sqrt(a), sqrt(1 - a))
-        val metres = EARTH_RADIUS_M * c
-        return if (metres < 1000) "${metres.toInt()}m"
-        else "%.1fkm".format(metres / 1000.0)
-    }
-}
 class LocationHelper(private val context: Context) {
 
     private val fusedLocationClient =
         LocationServices.getFusedLocationProviderClient(context)
 
+    /**
+     * Requests a FRESH, high-accuracy GPS fix.
+     * Uses getCurrentLocation() which actively polls the sensor,
+     * unlike lastLocation which may return a stale cached value.
+     */
     @SuppressLint("MissingPermission")
     suspend fun getCurrentLocation(): UserLocation? {
         return try {
-            val location = fusedLocationClient.lastLocation.await()
+            val cancellationTokenSource =
+                com.google.android.gms.tasks.CancellationTokenSource()
+
+            val location = fusedLocationClient
+                .getCurrentLocation(
+                    Priority.PRIORITY_HIGH_ACCURACY,
+                    cancellationTokenSource.token
+                )
+                .await()
+
             location?.let { UserLocation(it.latitude, it.longitude) }
         } catch (e: Exception) {
-            null
+            // Fall back to last known fix if fresh request fails
+            try {
+                val last = fusedLocationClient.lastLocation.await()
+                last?.let { UserLocation(it.latitude, it.longitude) }
+            } catch (e2: Exception) {
+                null
+            }
         }
     }
 
     /**
-     * Reverse-geocodes the given coordinates into a human-readable place name
-     * (e.g. "Bangi, Selangor" or "Kuala Lumpur").
-     * Falls back to the raw coordinates if geocoding fails or returns nothing.
+     * Reverse-geocodes [latitude]/[longitude] to a readable place name
+     * e.g. "Bangi, Selangor".
      */
     suspend fun getPlaceName(latitude: Double, longitude: Double): String {
         return try {
-            val geocoder = Geocoder(context, java.util.Locale.getDefault())
+            val geocoder = Geocoder(context)
 
-            val address = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                // API 33+ uses an async callback API
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                // API 33+: async listener-based API
                 suspendCancellableCoroutine { cont ->
                     geocoder.getFromLocation(latitude, longitude, 1) { addresses ->
-                        cont.resume(addresses.firstOrNull())
+                        val name = addresses.firstOrNull()?.let { buildPlaceName(it) }
+                            ?: "%.5f, %.5f".format(latitude, longitude)
+                        cont.resume(name)
                     }
                 }
             } else {
                 @Suppress("DEPRECATION")
-                geocoder.getFromLocation(latitude, longitude, 1)?.firstOrNull()
-            }
-
-            if (address != null) {
-                // Prefer a locality (city/town), fall back to sub-admin area or admin area
-                val locality = address.locality
-                    ?: address.subAdminArea
-                    ?: address.adminArea
-                val area = address.adminArea
-
-                when {
-                    locality != null && area != null && locality != area -> "$locality, $area"
-                    locality != null -> locality
-                    area != null -> area
-                    else -> "%.5f, %.5f".format(latitude, longitude)
-                }
-            } else {
-                "%.5f, %.5f".format(latitude, longitude)
+                val addresses = geocoder.getFromLocation(latitude, longitude, 1)
+                addresses?.firstOrNull()?.let { buildPlaceName(it) }
+                    ?: "%.5f, %.5f".format(latitude, longitude)
             }
         } catch (e: Exception) {
-            // Geocoder can throw if no network/geocoder service available
             "%.5f, %.5f".format(latitude, longitude)
         }
+    }
+
+    /** Builds a concise "Suburb, City" label from an Address. */
+    private fun buildPlaceName(address: android.location.Address): String {
+        val parts = listOfNotNull(
+            address.subLocality ?: address.thoroughfare,
+            address.locality ?: address.subAdminArea,
+            address.adminArea
+        ).filter { it.isNotBlank() }.distinct()
+        return if (parts.isNotEmpty()) parts.take(2).joinToString(", ")
+        else address.countryName ?: "Unknown location"
     }
 
     fun formatDistance(

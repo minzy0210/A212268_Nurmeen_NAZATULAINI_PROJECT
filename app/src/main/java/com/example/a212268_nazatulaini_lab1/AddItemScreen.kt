@@ -470,37 +470,47 @@ fun AddItemScreen(
     }
 }
 
+// Drop-in replacement for GpsLocationButton inside AddItemScreen.kt
+// Paste this over the existing GpsLocationButton composable.
+
 @Composable
 fun GpsLocationButton(
     onLocationFetched: (String) -> Unit
 ) {
     val context = LocalContext.current
-    val scope = rememberCoroutineScope()
+    val scope   = rememberCoroutineScope()
     var isFetching by remember { mutableStateOf(false) }
-    var error by remember { mutableStateOf<String?>(null) }
+    var statusText by remember { mutableStateOf<String?>(null) }
+    var isError    by remember { mutableStateOf(false) }
 
     val locationHelper = remember { LocationHelper(context) }
+
+    suspend fun fetchAndResolve() {
+        isFetching = true
+        isError    = false
+        statusText = "Detecting your location…"
+
+        val loc = locationHelper.getCurrentLocation()   // real-time GPS fix
+        if (loc != null) {
+            statusText = "Resolving address…"
+            val placeName = locationHelper.getPlaceName(loc.latitude, loc.longitude)
+            onLocationFetched(placeName)
+            statusText = "Location detected: $placeName"
+            isError = false
+        } else {
+            statusText = "Could not get location. Make sure GPS is on."
+            isError = true
+        }
+        isFetching = false
+    }
 
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { granted ->
-        if (granted) {
-            isFetching = true
-            scope.launch {
-                val loc = locationHelper.getCurrentLocation()
-                isFetching = false
-                if (loc != null) {
-                    val distance = locationHelper.formatDistance(
-                        loc.latitude, loc.longitude, 3.1234, 101.5678
-                    )
-                    onLocationFetched(distance)
-                    error = null
-                } else {
-                    error = "Could not get location. Make sure GPS is on."
-                }
-            }
-        } else {
-            error = "Location permission denied."
+        if (granted) scope.launch { fetchAndResolve() }
+        else {
+            statusText = "Location permission denied."
+            isError = true
         }
     }
 
@@ -509,46 +519,58 @@ fun GpsLocationButton(
             context, Manifest.permission.ACCESS_FINE_LOCATION
         ) == PackageManager.PERMISSION_GRANTED
 
-        if (granted) {
-            isFetching = true
-            scope.launch {
-                val loc = locationHelper.getCurrentLocation()
-                isFetching = false
-                if (loc != null) {
-                    val distance = locationHelper.formatDistance(
-                        loc.latitude, loc.longitude, 3.1234, 101.5678
-                    )
-                    onLocationFetched(distance)
-                    error = null
-                } else {
-                    error = "Could not get location. Make sure GPS is on."
-                }
-            }
-        } else {
-            permissionLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION)
-        }
+        if (granted) scope.launch { fetchAndResolve() }
+        else permissionLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION)
     }
 
     Column(modifier = Modifier.fillMaxWidth()) {
         OutlinedButton(
-            onClick = { checkAndFetch() },
+            onClick  = { checkAndFetch() },
             modifier = Modifier.fillMaxWidth(),
-            enabled = !isFetching
+            enabled  = !isFetching,
+            shape    = RoundedCornerShape(12.dp),
+            border   = BorderStroke(
+                1.dp,
+                if (isFetching) MaterialTheme.colorScheme.outlineVariant
+                else MaterialTheme.colorScheme.primary
+            )
         ) {
-            Icon(Icons.Default.LocationOn, null, modifier = Modifier.size(18.dp))
-            Spacer(Modifier.width(8.dp))
-            Text(if (isFetching) "Getting location..." else "Use My Current Location")
+            if (isFetching) {
+                CircularProgressIndicator(
+                    modifier    = Modifier.size(16.dp),
+                    strokeWidth = 2.dp,
+                    color       = MaterialTheme.colorScheme.primary
+                )
+                Spacer(Modifier.width(10.dp))
+                Text(statusText ?: "Getting location…",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+            } else {
+                Icon(
+                    Icons.Default.LocationOn, null,
+                    modifier = Modifier.size(18.dp),
+                    tint     = MaterialTheme.colorScheme.primary
+                )
+                Spacer(Modifier.width(8.dp))
+                Text("Use My Current Location",
+                    color = MaterialTheme.colorScheme.primary,
+                    fontWeight = FontWeight.Medium)
+            }
         }
-        if (error != null) {
+
+        // Status / error message below the button
+        if (statusText != null && !isFetching) {
+            Spacer(Modifier.height(4.dp))
             Text(
-                error!!,
-                color = MaterialTheme.colorScheme.error,
-                style = MaterialTheme.typography.labelSmall,
-                modifier = Modifier.padding(top = 4.dp)
+                statusText!!,
+                style    = MaterialTheme.typography.labelSmall,
+                color    = if (isError) MaterialTheme.colorScheme.error
+                else MaterialTheme.colorScheme.primary,
+                modifier = Modifier.padding(horizontal = 4.dp)
             )
         }
     }
 }
+
 // ── Reusable calendar overlay composable ──────────────────────────────
 @Composable
 private fun CalendarOverlay(

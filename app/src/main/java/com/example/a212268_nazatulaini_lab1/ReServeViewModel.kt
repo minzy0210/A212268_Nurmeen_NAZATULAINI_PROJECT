@@ -10,9 +10,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.map
+import kotlin.math.*
 
-// 5. VIEWMODEL — calls repository methods, exposes StateFlow to the UI.
-//    No direct database or DAO imports here.
 class ReServeViewModel(
     private val repository: ReServeRepository
 ) : ViewModel() {
@@ -30,8 +29,6 @@ class ReServeViewModel(
     val items: StateFlow<List<Item>> = _items
 
     // ── User-listed items — now from Room via repository ─────────────
-    // stateIn() converts the cold Flow from the DB into a hot StateFlow
-    // the UI can collect with collectAsStateWithLifecycle()
     val userListedItems: StateFlow<List<UserListedItem>> =
         repository.userListedItems.stateIn(
             scope = viewModelScope,
@@ -57,7 +54,7 @@ class ReServeViewModel(
             .map { list -> list.map { it.itemName }.toSet() }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptySet())
 
-    // ── Replace these two functions ───────────────────────────────────────
+    // ── Reservation / borrow ──────────────────────────────────────────
     fun reserveFoodItem(itemName: String, quantity: Int) {
         viewModelScope.launch { repository.reserveItem(itemName, quantity) }
     }
@@ -65,9 +62,8 @@ class ReServeViewModel(
     fun borrowNonFoodItem(itemName: String) {
         viewModelScope.launch { repository.borrowItem(itemName) }
     }
-    // ── UserListedItem operations ─────────────────────────────────────
 
-    /** Called from AddItemScreen — launches a coroutine to insert into Room */
+    // ── UserListedItem operations ─────────────────────────────────────
     fun addUserItem(item: UserListedItem) {
         val normalized = item.copy(
             category = if (item.category.equals("food", ignoreCase = true)) "Food" else "Non-food"
@@ -83,7 +79,6 @@ class ReServeViewModel(
         viewModelScope.launch { repository.updateUserItem(item) }
     }
 
-    // Synchronous helpers (read from the already-loaded StateFlow value)
     fun getUserListedItem(name: String): UserListedItem? =
         userListedItems.value.firstOrNull { it.name == name }
 
@@ -92,26 +87,34 @@ class ReServeViewModel(
 
     fun getDistance(name: String): String {
         userListedItems.value.firstOrNull { it.name == name }?.let { item ->
+            // If location is stored as GPS coords, return it as-is for now
+            // (real distance shown via LocationViewModel in the detail screens)
             val parts = item.location.split(",").map { it.trim().toDoubleOrNull() }
             return if (parts.size == 2 && parts[0] != null && parts[1] != null) {
-                com.example.a212268_nazatulaini_lab1.DistanceUtils.formatDistance(
-                    parts[0]!!, parts[1]!!, 3.1234, 101.5678
-                )
+                "Nearby"   // coords detected — detail screen will show real distance
             } else {
-                item.location
+                item.location  // user typed a readable location (e.g. "1.2km, Taman Mulia")
             }
         }
+        // Fallback for hardcoded static items
         return when (name) {
-            "Apple" -> "1.2km"; "Bread" -> "0.8km"; "Milk" -> "2.1km"
-            "Cake" -> "3.5km"; "Banana" -> "0.5km"; "Pizza" -> "1.9km"
-            "Guitar" -> "2.3km"; "Trampoline" -> "4.1km"; "Plant Pot" -> "0.9km"
-            "Chair" -> "1.5km"; "Table" -> "3.2km"; "Books" -> "1.1km"
-            else -> "N/A"
+            "Apple"      -> "1.2km"
+            "Bread"      -> "0.8km"
+            "Milk"       -> "2.1km"
+            "Cake"       -> "3.5km"
+            "Banana"     -> "0.5km"
+            "Pizza"      -> "1.9km"
+            "Guitar"     -> "2.3km"
+            "Trampoline" -> "4.1km"
+            "Plant Pot"  -> "0.9km"
+            "Chair"      -> "1.5km"
+            "Table"      -> "3.2km"
+            "Books"      -> "1.1km"
+            else         -> "N/A"
         }
     }
 
     // ── Cart operations ───────────────────────────────────────────────
-
     fun addToCart(itemName: String, quantity: Int = 1) {
         viewModelScope.launch {
             val foodItem = getFoodItemData(itemName)
@@ -150,10 +153,9 @@ class ReServeViewModel(
 
     fun getCartTotal(): Double = cartItems.value.sumOf { it.price * it.quantity }
 
-    // ── Reservation / borrow (in-memory) ─────────────────────────────
-
+    // ── Reservation / borrow helpers ──────────────────────────────────
     fun getRemainingStock(itemName: String): Int {
-        val reserved = reservedQuantities.value[itemName] ?: 0   // ← use StateFlow value
+        val reserved = reservedQuantities.value[itemName] ?: 0
         getUserListedItem(itemName)?.let { userItem ->
             if (userItem.category.equals("Food", ignoreCase = true)) {
                 return (userItem.quantity - reserved).coerceAtLeast(0)
@@ -166,8 +168,8 @@ class ReServeViewModel(
     fun isSoldOut(itemName: String) = getRemainingStock(itemName) <= 0
 
     fun isBorrowed(itemName: String) = itemName in borrowedItems.value
-    // ── Category helpers ──────────────────────────────────────────────
 
+    // ── Category helpers ──────────────────────────────────────────────
     fun getFoodItems(): List<Item> {
         val base = _items.value.filter { it.category == "Food" }
         val userFood = userListedItems.value
@@ -179,8 +181,10 @@ class ReServeViewModel(
     fun getNonFoodItems(): List<Item> {
         val base = _items.value.filter { it.category == "Non-food" }
         val userNonFood = userListedItems.value
-            .filter { it.category.equals("Non-food", ignoreCase = true) ||
-                    it.category.equals("Non-Food", ignoreCase = true) }
+            .filter {
+                it.category.equals("Non-food", ignoreCase = true) ||
+                        it.category.equals("Non-Food", ignoreCase = true)
+            }
             .map { Item(it.name, "Non-food") }
         return base + userNonFood
     }
@@ -194,7 +198,6 @@ class ReServeViewModel(
     fun getGoingSoon() = _items.value.filter { it.name == "Bread" || it.name == "Milk" }
 
     // ── ViewModelFactory ──────────────────────────────────────────────
-    // Required because ViewModel now has a constructor parameter (repository)
     class Factory(private val repository: ReServeRepository) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T {
